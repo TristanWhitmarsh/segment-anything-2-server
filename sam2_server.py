@@ -8,14 +8,19 @@ from sam2.build_sam import build_sam2_video_predictor
 from collections import OrderedDict
 import torch.nn.functional as F
 from collections import OrderedDict
+import logging
 
-app = Flask(__name__)
+app = Flask('sam2_server')
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 mask_dict = None
 inference_state = None
 predictor = None
 combined_mask = None
 video_segments = None
+device = None
 
 def init_state(
         images,
@@ -23,27 +28,33 @@ def init_state(
         video_width,
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
-        async_loading_frames=False,
+        device=torch.device("cuda")
     ):
         """Initialize a inference state."""
         global inference_state
         global predictor
 
+        compute_device = device  # device of the model
         inference_state = {}
         
         # Assuming `images` is your input image data as a numpy array or other format
         images = images.astype(np.float32) / 255.0 # Normalize to [0, 1] range
 
         # Convert to tensor and move to GPU
-        image_tensor = torch.tensor(images).float().cuda().permute(0, 3, 1, 2)
+        image_tensor = torch.tensor(images).float().permute(0, 3, 1, 2)
 
         # Resize the image tensor to [batch_size, channels, image_size, image_size]
         image_size = 1024
         image_tensor = F.interpolate(image_tensor, size=(image_size, image_size), mode='bilinear', align_corners=False)
 
         # Define the mean and standard deviation for normalization (RGB channels)
-        img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).cuda().view(1, 3, 1, 1)
-        img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).cuda().view(1, 3, 1, 1)
+        img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1)
+        img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1)
+
+        if not offload_video_to_cpu:
+            image_tensor = image_tensor.to(compute_device)
+            img_mean = img_mean.to(compute_device)
+            img_std = img_std.to(compute_device)
 
         # Normalize the image tensor
         image_tensor = (image_tensor - img_mean) / img_std
@@ -61,11 +72,11 @@ def init_state(
         # the original video height and width, used for resizing final output scores
         inference_state["video_height"] = video_height
         inference_state["video_width"] = video_width
-        inference_state["device"] = torch.device("cuda")
+        inference_state["device"] = compute_device
         if offload_state_to_cpu:
             inference_state["storage_device"] = torch.device("cpu")
         else:
-            inference_state["storage_device"] = torch.device("cuda")
+            inference_state["storage_device"] = compute_device
         # inputs on each frame
         inference_state["point_inputs_per_obj"] = {}
         inference_state["mask_inputs_per_obj"] = {}
@@ -107,7 +118,6 @@ def clear_object_data(inference_state, obj_id):
     obj_idx = inference_state["obj_id_to_idx"].get(obj_id, None)
     if obj_idx is None:
         # If the object ID is not found, just return without doing anything
-        print(f"Object ID {obj_id} not found in the inference state. Skipping reset.")
         return
 
     # Clear point inputs and mask inputs for all frames associated with this object ID
@@ -132,7 +142,6 @@ def clear_object_data(inference_state, obj_id):
     for frame in frames_to_clear:
         inference_state["frames_already_tracked"].pop(frame, None)
 
-    print(f"Cleared all data for object ID {obj_id}")
 
 
 def remove_points_for_frame(inference_state, frame_idx, obj_id):
@@ -198,11 +207,6 @@ def sam2_inference(predictor, inference_state, box, points=None, labels=None, an
             # If no segments for this frame, return a zeroed mask for this frame
             return np.zeros((inference_state['video_height'], inference_state['video_width']), dtype=np.uint8)
 
-
-
-    input_box = np.array(box)
-
-    print(f"Processing frame: {ann_frame_idx}")
 
     try:
         _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
@@ -298,7 +302,7 @@ def sam2_inference_3D(predictor, inference_state):
 
 @app.route('/infer3D', methods=['POST'])
 def infer3D():
-    print("infer3D")
+    print("Running full inference")
     global inference_state
     global predictor
     masks = sam2_inference_3D(predictor, inference_state)
@@ -310,7 +314,7 @@ def infer3D():
 
 @app.route('/infer', methods=['POST'])
 def infer():
-    print("infer")
+    print("Running inference")
     global inference_state
 
 
@@ -375,7 +379,7 @@ def infer():
 
 @app.route('/add_mask', methods=['POST'])
 def add_mask():
-    print("add_mask")
+    print("Adding mask")
     global inference_state
     global predictor
 
@@ -454,13 +458,34 @@ def reset():
 
 @app.route('/init', methods=['POST'])
 def init():
-    print("init")
+    print("Initializing")
 
     global inference_state
     global predictor
+    global device
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    # select the device for computation
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"using device: {device}")
+
+    if device.type == "cuda":
+        # use bfloat16 for the entire notebook
+        torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
+        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+        if torch.cuda.get_device_properties(0).major >= 8:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+    elif device.type == "mps":
+        print(
+            "\nSupport for MPS devices is preliminary. SAM 2 is trained with CUDA and might "
+            "give numerically different outputs and sometimes degraded performance on MPS. "
+            "See e.g. https://github.com/pytorch/pytorch/issues/84936 for a discussion."
+        )
 
     width = int(request.form['width'])
     height = int(request.form['height'])
@@ -488,11 +513,7 @@ def init():
 
     print("Loading model " + model)
 
-    predictor = build_sam2_video_predictor(model_cfg, checkpoint)
-    # predictor.model.to(device)
-    # predictor.model.eval()
-
-    image = None
+    predictor = build_sam2_video_predictor(model_cfg, checkpoint, device=device)
 
     print("Loading model done")
     try:
@@ -503,8 +524,7 @@ def init():
             images = [Image.fromarray(image_data[i], 'RGB') for i in range(frames)]
             images = np.array(images)
 
-            image = images[0]
-            inference_state = init_state(images, height, width)
+            inference_state = init_state(images, height, width, device=device)
             predictor.reset_state(inference_state)
 
             print("Ready")
@@ -521,7 +541,7 @@ def init():
 
 @app.route('/infer2D', methods=['POST'])
 def infer2D():
-    print("infer2D")
+    print("Running 2D inference")
 
     global predictor
     global mask_dict
@@ -530,8 +550,6 @@ def infer2D():
     id_str = request.form['input_id']
     labels_str = request.form.get('input_labels', '')
     box_str = request.form.get('box', '')
-
-    print(f"points_str {points_str}")
 
     # Process the box if provided
     box = None
@@ -594,14 +612,34 @@ def infer2D():
 
 @app.route('/init2D', methods=['POST'])
 def init2D():
-    print("init2D")
+    print("Initializing for 2D")
 
     global predictor
     global mask_dict
     mask_dict = OrderedDict()
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    # select the device for computation
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"using device: {device}")
+
+    if device.type == "cuda":
+        # use bfloat16 for the entire notebook
+        torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
+        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+        if torch.cuda.get_device_properties(0).major >= 8:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+    elif device.type == "mps":
+        print(
+            "\nSupport for MPS devices is preliminary. SAM 2 is trained with CUDA and might "
+            "give numerically different outputs and sometimes degraded performance on MPS. "
+            "See e.g. https://github.com/pytorch/pytorch/issues/84936 for a discussion."
+        )
 
     width = int(request.form['width'])
     height = int(request.form['height'])
