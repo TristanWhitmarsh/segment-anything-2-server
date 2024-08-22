@@ -295,8 +295,6 @@ def sam2_inference_3D(predictor, inference_state):
             # Ensure that the mask is only applied to areas where the slices array is still 0
             slices[out_frame_idx][(out_mask > 0) & (slices[out_frame_idx] == 0)] = out_obj_id
 
-    print(slices.shape)
-
     return slices
 
 
