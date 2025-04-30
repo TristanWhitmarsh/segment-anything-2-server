@@ -490,24 +490,24 @@ def init():
     frames = int(request.form['frames'])
     model = request.form['model']
 
-    checkpoint = "./checkpoints/sam2_hiera_tiny.pt"
-    model_cfg = "sam2_hiera_t.yaml"
+    checkpoint = "./checkpoints/sam2.1_hiera_tiny.pt"
+    model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
 
     if model == "sam2_hiera_tiny":
-        checkpoint = "./checkpoints/sam2_hiera_tiny.pt"
-        model_cfg = "sam2_hiera_t.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_tiny.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
 
     if model == "sam2_hiera_small":
-        checkpoint = "./checkpoints/sam2_hiera_small.pt"
-        model_cfg = "sam2_hiera_s.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_small.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
 
     if model == "sam2_hiera_base_plus":
-        checkpoint = "./checkpoints/sam2_hiera_base_plus.pt"
-        model_cfg = "sam2_hiera_b.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_base_plus.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_b.yaml"
 
     if model == "sam2_hiera_large":
-        checkpoint = "./checkpoints/sam2_hiera_large.pt"
-        model_cfg = "sam2_hiera_l.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_large.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
     print("Loading model " + model)
 
@@ -642,25 +642,25 @@ def init2D():
     width = int(request.form['width'])
     height = int(request.form['height'])
     model = request.form['model']
-
-    checkpoint = "./checkpoints/sam2_hiera_tiny.pt"
-    model_cfg = "sam2_hiera_t.yaml"
+        
+    checkpoint = "./checkpoints/sam2.1_hiera_tiny.pt"
+    model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
 
     if model == "sam2_hiera_tiny":
-        checkpoint = "./checkpoints/sam2_hiera_tiny.pt"
-        model_cfg = "sam2_hiera_t.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_tiny.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
 
     if model == "sam2_hiera_small":
-        checkpoint = "./checkpoints/sam2_hiera_small.pt"
-        model_cfg = "sam2_hiera_s.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_small.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
 
     if model == "sam2_hiera_base_plus":
-        checkpoint = "./checkpoints/sam2_hiera_base_plus.pt"
-        model_cfg = "sam2_hiera_b.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_base_plus.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_b.yaml"
 
     if model == "sam2_hiera_large":
-        checkpoint = "./checkpoints/sam2_hiera_large.pt"
-        model_cfg = "sam2_hiera_l.yaml"
+        checkpoint = "./checkpoints/sam2.1_hiera_large.pt"
+        model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
     print("Loading model " + model)
 
