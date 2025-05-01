@@ -1,3 +1,10 @@
+# Workaround for OpenMP runtime conflicts on Windows with PyTorch + NumPy (e.g., MKL + libiomp5)
+# Not officially required by SAM2, but avoids crashes like:
+# "OMP: Error #15: Initializing libiomp5md.dll..."
+# Safe for development; remove in clean/Docker/Linux setups
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from flask import Flask, request, jsonify
 import numpy as np
 import torch
